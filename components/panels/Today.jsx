@@ -5,7 +5,7 @@ import { money, today } from "@/lib/format";
 import { SumCard, Panel, Empty, Badge } from "../ui";
 
 // The operational "Today" view for one project.
-export default function Today({ project, isAdmin, onJump }) {
+export default function Today({ project, isAdmin, onJump, currentUser }) {
   const data = useProject(project.id);
   const boq = data.boq.data || [];
   const vendors = data.vendors.data || [];
@@ -23,7 +23,8 @@ export default function Today({ project, isAdmin, onJump }) {
   const duePos = pos.filter((p) => p.requiredDelivery && p.requiredDelivery <= tStr);
   const dueMilestones = milestones.filter((m) => m.status !== "Paid" && m.dueDate && m.dueDate <= tStr).sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
   const openSnags = snags.filter((s) => s.status !== "Fixed");
-  const openTasks = tasks.filter((t) => t.status !== "Done" && (isAdmin || t.assignedTo === project.id));
+  const myUid = currentUser?.uid || currentUser?.id || "";
+  const openTasks = tasks.filter((t) => t.status !== "Done" && (isAdmin || t.assignedTo === myUid));
   const latest = [...updates].sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
   const unpaidInvoices = invoices.filter((i) => i.status !== "Paid").reduce((s, i) => s + (Number(i.total) || 0), 0);
 

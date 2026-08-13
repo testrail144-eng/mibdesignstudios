@@ -20,6 +20,7 @@ import Tasks from "./panels/Tasks";
 import Team from "./panels/Team";
 import Settings from "./panels/Settings";
 import { Empty, Modal, Field } from "./ui";
+import { useConfirm } from "./ConfirmProvider";
 
 const ADMIN_TABS = [
   ["today", "Today"],
@@ -43,6 +44,7 @@ const STAFF_TABS = [
 
 export default function App() {
   const { profile, isAdmin } = useAuth();
+  const { notify } = useConfirm();
   const [currentId, setCurrentId] = useState(null);
   const [tab, setTab] = useState("today");
   const [showSettings, setShowSettings] = useState(false);
@@ -50,6 +52,7 @@ export default function App() {
   const [newName, setNewName] = useState("");
   const [newClient, setNewClient] = useState("");
   const [newLocation, setNewLocation] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const projects = useCollection("projects", { orderBy: "createdAt" }).data || [];
 
@@ -62,21 +65,29 @@ export default function App() {
 
   const createProject = async () => {
     const name = newName.trim();
-    if (!name) return;
-    const ref = await addDoc(collection(db, "projects"), {
-      name,
-      client: newClient.trim(),
-      location: newLocation.trim(),
-      contractValue: 0,
-      createdAt: Date.now(),
-      createdBy: profile.uid,
-    });
-    setCurrentId(ref.id);
-    setTab("today");
-    setShowNewSite(false);
-    setNewName("");
-    setNewClient("");
-    setNewLocation("");
+    if (!name || saving) return;
+    setSaving(true);
+    try {
+      const ref = await addDoc(collection(db, "projects"), {
+        name,
+        client: newClient.trim(),
+        location: newLocation.trim(),
+        contractValue: 0,
+        createdAt: Date.now(),
+        createdBy: profile.uid || profile.id || "",
+      });
+      setCurrentId(ref.id);
+      setTab("today");
+      setShowNewSite(false);
+      setNewName("");
+      setNewClient("");
+      setNewLocation("");
+    } catch (err) {
+      console.error("Create site failed:", err);
+      notify("Could not create site: " + (err?.message || "unknown error"));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const tabs = isAdmin ? ADMIN_TABS : STAFF_TABS;
@@ -114,7 +125,7 @@ export default function App() {
               ))}
             </div>
 
-            {tab === "today" && <Today project={project} isAdmin={isAdmin} onJump={setTab} />}
+            {tab === "today" && <Today project={project} isAdmin={isAdmin} onJump={setTab} currentUser={profile} />}
             {tab === "dashboard" && isAdmin && <Dashboard />}
             {tab === "overview" && isAdmin && <Boq projectId={project.id} />}
             {tab === "quote" && isAdmin && <Quotations project={project} />}
@@ -149,8 +160,8 @@ export default function App() {
             <input value={newLocation} onChange={(e) => setNewLocation(e.target.value)} placeholder="Site location" />
           </Field>
           <div className="modal-actions">
-            <button className="btn" onClick={createProject} disabled={!newName.trim()}>
-              Create site
+            <button className="btn" onClick={createProject} disabled={!newName.trim() || saving}>
+              {saving ? "Creating…" : "Create site"}
             </button>
             <button className="btn ghost" onClick={() => setShowNewSite(false)}>Cancel</button>
           </div>

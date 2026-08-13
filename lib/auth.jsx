@@ -15,9 +15,14 @@ import { auth, db, isConfigured } from "./firebase";
 const AuthContext = createContext(null);
 
 // Role is stored on a `users/{uid}` doc in Firestore.
+// We always normalize to { id, uid, ...fields } so the profile object is
+// consistent — the doc's own id is the auth uid, but older/migrated docs may
+// not have a `uid` field stored *inside* the data. Normalizing here prevents
+// "undefined" from leaking into writes (e.g. createdBy).
 async function fetchRole(uid) {
   const snap = await getDoc(doc(db, "users", uid));
-  return snap.exists() ? snap.data() : null;
+  if (!snap.exists()) return null;
+  return { id: snap.id, uid, ...snap.data() };
 }
 
 // The very first account created becomes the admin. Everyone after that is
@@ -26,14 +31,14 @@ async function fetchRole(uid) {
 async function ensureUserDoc(uid, email, name) {
   const ref = doc(db, "users", uid);
   const existing = await getDoc(ref);
-  if (existing.exists()) return existing.data();
+  if (existing.exists()) return { id: uid, uid, ...existing.data() };
 
   // Is there already an admin anywhere? If not, this is the first user.
   const admins = await getDocs(query(collection(db, "users"), where("role", "==", "admin")));
   const role = admins.empty ? "admin" : "staff";
   const data = { uid, email: email || "", name: name || "", role, createdAt: Date.now() };
   await setDoc(ref, data);
-  return data;
+  return { id: uid, uid, ...data };
 }
 
 export function AuthProvider({ children }) {
