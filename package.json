@@ -1,0 +1,22 @@
+{
+  "name": "groundwork",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Construction & interior site management ledger — BOQ, quotations, vendors, purchase orders, payments, daily logs, snags, tasks, and client sharing.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "firebase": "^11.4.0",
+    "next": "^14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "eslint": "8.57.1",
+    "eslint-config-next": "14.2.15"
+  }
+}
