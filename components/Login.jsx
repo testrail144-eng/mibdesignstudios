@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import BrandLogo from "./BrandLogo";
 import { useAuth } from "@/lib/auth";
 
 export default function Login() {
@@ -38,11 +39,15 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
-        <h1>
-          <span className="mark" />
-          GROUNDWORK
-        </h1>
-        <div className="login-sub">Site &amp; vendor ledger</div>
+        <div className="login-brand">
+          <BrandLogo size={82} />
+          <div>
+            <h1>MIB DESIGN STUDIOS</h1>
+            <div className="login-sub">Site management workspace</div>
+          </div>
+        </div>
+        <div className="login-welcome">{mode === "signin" ? "Welcome back" : mode === "signup" ? "Create your workspace account" : "Reset your password"}</div>
+        <p className="login-hint">Keep projects, site updates, expenses and team work in one calm place.</p>
 
         {mode === "signup" && (
           <div className="login-field">
@@ -66,7 +71,7 @@ export default function Login() {
         {error && <div className="form-error">{error}</div>}
         {info && <div className="form-ok">{info}</div>}
 
-        <button className="btn block" style={{ marginTop: 8 }} disabled={busy} type="submit">
+        <button className="btn block login-submit" disabled={busy} type="submit">
           {busy ? "Please wait…" : mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Send reset link"}
         </button>
 
@@ -75,7 +80,7 @@ export default function Login() {
             <>
               New here? <button type="button" onClick={() => { setMode("signup"); setError(""); }}>Create an account</button>
               <br />
-              <button type="button" style={{ marginTop: 6 }} onClick={() => { setMode("forgot"); setError(""); }}>Forgot password?</button>
+              <button type="button" className="login-secondary-link" onClick={() => { setMode("forgot"); setError(""); }}>Forgot password?</button>
             </>
           )}
           {mode === "signup" && (

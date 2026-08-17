@@ -17,11 +17,24 @@ service cloud.firestore {
     // ---- Users (roles) ----
     match /users/{uid} {
       allow read: if signedIn();
-      allow create: if isOwnUser(uid);
-      // A user can edit their own name; only an admin can change roles.
-      allow update: if isOwnUser(uid) &&
-        (!('role' in request.resource.data) || request.resource.data.role == resource.data.role);
-      allow delete: if isAdmin();
+      // The first-account bootstrap behaviour is retained for existing
+      // installations. After an account exists, only an admin can change its
+      // role; a member can update their own profile without changing role.
+      allow create: if isOwnUser(uid) &&
+        (request.resource.data.role == 'admin' || request.resource.data.role == 'staff');
+      allow update: if isAdmin() ||
+        (isOwnUser(uid) && request.resource.data.role == resource.data.role);
+      allow delete: if isAdmin() && uid != request.auth.uid;
+    }
+
+    // ---- Admin-prepared team invitations ----
+    // The document id is the normalized email address. A signed-in member can
+    // read only the invitation addressed to their own email so sign-up can
+    // apply the invited role automatically.
+    match /teamInvites/{emailKey} {
+      allow read: if isAdmin() ||
+        (signedIn() && emailKey == request.auth.token.email);
+      allow create, update, delete: if isAdmin();
     }
 
     // ---- Studio settings ----
@@ -45,9 +58,36 @@ service cloud.firestore {
       match /milestones/{id} { allow read, write: if isAdmin(); }
       match /invoices/{id}   { allow read, write: if isAdmin(); }
 
-      // Operational data: any signed-in user (admin or staff) can read/write
+      // Expense entries: staff can see and manage only their own entries;
+      // admins can see, approve and manage every entry on the site.
+      match /expenses/{id} {
+        allow read: if isAdmin() ||
+          (signedIn() && resource.data.createdBy == request.auth.uid);
+        allow create: if signedIn() &&
+          request.resource.data.createdBy == request.auth.uid &&
+          ((isAdmin() && request.resource.data.createdRole == 'admin') ||
+           (!isAdmin() && request.resource.data.createdRole == 'staff'));
+        allow update: if isAdmin() ||
+          (signedIn() && resource.data.createdBy == request.auth.uid &&
+           request.resource.data.createdBy == request.auth.uid);
+        allow delete: if isAdmin() ||
+          (signedIn() && resource.data.createdBy == request.auth.uid);
+      }
+
+      // Operational data: any signed-in user (admin or staff) can read/write.
       match /updates/{id}    { allow read, write: if signedIn(); }
       match /snags/{id}      { allow read, write: if signedIn(); }
+
+      // Site attendance photos and timestamps. Everyone on the signed-in team
+      // can see attendance; only the member who owns a visit (or an admin) can
+      // complete/update it.
+      match /attendance/{id} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+        allow update: if isAdmin() ||
+          (signedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == resource.data.userId);
+        allow delete: if isAdmin();
+      }
 
       // Tasks: everyone can read; staff can only create tasks they own or
       // update tasks assigned to them.
@@ -58,6 +98,14 @@ service cloud.firestore {
         allow update: if isAdmin() ||
           (signedIn() && resource.data.assignedTo == request.auth.uid);
         allow delete: if isAdmin();
+      }
+
+      // Admin-only audit feed. The client writes a compact event after a new
+      // record is created; the server uses the same event for Gmail alerts.
+      match /activity/{id} {
+        allow read: if isAdmin();
+        allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid;
+        allow update, delete: if isAdmin();
       }
     }
   }

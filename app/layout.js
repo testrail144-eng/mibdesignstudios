@@ -3,9 +3,9 @@ import { ConfirmProvider } from "@/components/ConfirmProvider";
 import "./globals.css";
 
 export const metadata = {
-  title: "Groundwork — Site & Vendor Ledger",
+  title: "MIB Design Studios — Site & Vendor Ledger",
   description:
-    "Construction & interior project management: BOQ, quotations, vendors, purchase orders, payments, daily logs, snags and tasks.",
+    "Construction & interior project management: BOQ, quotations, vendors, purchase orders, payments, daily logs, snags, attendance, expenses and tasks.",
 };
 
 export default function RootLayout({ children }) {

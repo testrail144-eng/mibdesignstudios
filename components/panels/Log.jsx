@@ -4,11 +4,12 @@ import { useState } from "react";
 import { collection, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useProject } from "@/lib/store";
+import { recordActivity } from "@/lib/activity";
 import { compressImage } from "@/lib/image";
-import { today } from "@/lib/format";
+import { today, dateTime } from "@/lib/format";
 import { Panel, Empty, Field } from "../ui";
 
-export default function Log({ projectId }) {
+export default function Log({ projectId, projectName, currentUser }) {
   const { updates } = useProject(projectId);
   const [date, setDate] = useState(today());
   const [remarks, setRemarks] = useState("");
@@ -26,8 +27,8 @@ export default function Log({ projectId }) {
       try {
         const url = await compressImage(f);
         setPhotos((p) => [...p, url]);
-      } catch (err) {
-        setErr("Photo processing failed: " + (err?.message || "unknown error"));
+      } catch (error) {
+        setErr("Photo processing failed: " + (error?.message || "unknown error"));
       }
     }
     e.target.value = "";
@@ -40,19 +41,32 @@ export default function Log({ projectId }) {
     }
     setSaving(true);
     setErr("");
+    const createdAt = Date.now();
     try {
-      await addDoc(collection(db, `projects/${projectId}/updates`), {
+      const ref = await addDoc(collection(db, `projects/${projectId}/updates`), {
         date,
         remarks: remarks.trim(),
         nextDay: nextDay.trim(),
         photos,
-        createdAt: Date.now(),
+        createdBy: currentUser?.uid || currentUser?.id || "",
+        createdByName: currentUser?.name || currentUser?.email || "Unknown member",
+        createdByEmail: currentUser?.email || "",
+        createdAt,
+      });
+      void recordActivity({
+        projectId,
+        projectName,
+        type: "daily update",
+        title: "New daily site update added",
+        details: remarks.trim() || nextDay.trim() || `${photos.length} photo${photos.length === 1 ? "" : "s"}`,
+        actor: currentUser,
+        resourceId: ref.id,
       });
       setRemarks("");
       setNextDay("");
       setPhotos([]);
-    } catch (err) {
-      setErr("Could not save: " + (err?.message || "unknown error"));
+    } catch (error) {
+      setErr("Could not save: " + (error?.message || "unknown error"));
     } finally {
       setSaving(false);
     }
@@ -73,7 +87,7 @@ export default function Log({ projectId }) {
         <Field label="Photos">
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             {photos.map((p, i) => (
-              <img key={i} className="photo-thumb" src={p} alt="" />
+              <img key={i} className="photo-thumb" src={p} alt={`Selected site photo ${i + 1}`} />
             ))}
             {photos.length < 6 && (
               <label className="photo-add">
@@ -95,9 +109,10 @@ export default function Log({ projectId }) {
               <div className="entry-date">{u.date}</div>
               {u.remarks && <><div className="entry-label">Report / remarks</div><div className="entry-body">{u.remarks}</div></>}
               {u.nextDay && <><div className="entry-label">Next day line-up</div><div className="entry-body">{u.nextDay}</div></>}
+              <div className="entry-meta">Added by <b>{u.createdByName || "Unknown member"}</b>{u.createdAt ? ` · ${dateTime(u.createdAt)}` : ""}</div>
               {u.photos && u.photos.length > 0 && (
                 <div className="entry-photos">
-                  {u.photos.map((p, i) => <img key={i} className="photo-thumb" src={p} alt="" />)}
+                  {u.photos.map((p, i) => <img key={i} className="photo-thumb" src={p} alt={`Site photo ${i + 1} uploaded by ${u.createdByName || "member"}`} title={`Uploaded by ${u.createdByName || "member"}`} />)}
                 </div>
               )}
             </div>

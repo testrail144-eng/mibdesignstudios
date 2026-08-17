@@ -3,14 +3,16 @@
 import { collection, addDoc, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useProject, useCollection } from "@/lib/store";
+import { recordActivity } from "@/lib/activity";
 import { Panel, Empty, Badge } from "../ui";
 
-export default function Tasks({ projectId, isAdmin, currentUser }) {
+export default function Tasks({ projectId, projectName, isAdmin, currentUser }) {
   const { tasks } = useProject(projectId);
   const users = useCollection("users").data || [];
 
   const add = async () => {
-    await addDoc(collection(db, `projects/${projectId}/tasks`), { title: "", assignedTo: "", dueDate: "", status: "Open", createdAt: Date.now() });
+    const ref = await addDoc(collection(db, `projects/${projectId}/tasks`), { title: "", assignedTo: "", dueDate: "", status: "Open", createdAt: Date.now(), createdBy: currentUser?.uid || currentUser?.id || "", createdByName: currentUser?.name || currentUser?.email || "Unknown member" });
+    void recordActivity({ projectId, projectName, type: "task", title: "New task added", details: "A new site task was created", actor: currentUser, resourceId: ref.id });
   };
   const update = async (id, field, value) => {
     await setDoc(doc(db, `projects/${projectId}/tasks`, id), { [field]: value }, { merge: true });
@@ -18,8 +20,6 @@ export default function Tasks({ projectId, isAdmin, currentUser }) {
   const remove = async (id) => {
     await deleteDoc(doc(db, `projects/${projectId}/tasks`, id));
   };
-
-  const nameOf = (uid) => users.find((u) => u.id === uid)?.name || "Unassigned";
 
   if (!isAdmin) {
     const mine = (tasks.data || []).filter((t) => t.assignedTo === currentUser?.uid);

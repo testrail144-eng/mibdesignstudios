@@ -3,6 +3,7 @@
 import { useProject } from "@/lib/store";
 import { money, today } from "@/lib/format";
 import { SumCard, Panel, Empty, Badge } from "../ui";
+import Attendance from "./Attendance";
 
 // The operational "Today" view for one project.
 export default function Today({ project, isAdmin, onJump, currentUser }) {
@@ -26,11 +27,13 @@ export default function Today({ project, isAdmin, onJump, currentUser }) {
   const myUid = currentUser?.uid || currentUser?.id || "";
   const openTasks = tasks.filter((t) => t.status !== "Done" && (isAdmin || t.assignedTo === myUid));
   const latest = [...updates].sort((a, b) => (b.date || "").localeCompare(a.date || ""))[0];
-  const unpaidInvoices = invoices.filter((i) => i.status !== "Paid").reduce((s, i) => s + (Number(i.total) || 0), 0);
+  const unpaidInvoices = invoices.filter((i) => i.status !== "Paid").reduce((s, i) => s + invoiceTotal(i), 0);
 
   if (!isAdmin) {
     return (
       <>
+        <QuickActions isAdmin={isAdmin} onJump={onJump} />
+        <Attendance projectId={project.id} projectName={project.name} isAdmin={isAdmin} currentUser={currentUser} />
         <div className="summary-row">
           <SumCard label="Open snags" value={openSnags.length} tone={openSnags.length ? "rust" : "green"} />
           <SumCard label="My open tasks" value={openTasks.length} tone={openTasks.length ? "rust" : "green"} />
@@ -41,6 +44,7 @@ export default function Today({ project, isAdmin, onJump, currentUser }) {
               <div className="entry-date">{latest.date}</div>
               {latest.remarks && <><div className="entry-label">Report / remarks</div><div className="entry-body">{latest.remarks}</div></>}
               {latest.nextDay && <><div className="entry-label">Next day line-up</div><div className="entry-body">{latest.nextDay}</div></>}
+              <div className="entry-meta">Added by <b>{latest.createdByName || "Unknown member"}</b></div>
             </div>
           ) : <Empty>No site updates logged yet.</Empty>}
         </Panel>
@@ -58,6 +62,8 @@ export default function Today({ project, isAdmin, onJump, currentUser }) {
 
   return (
     <>
+      <QuickActions isAdmin={isAdmin} onJump={onJump} />
+      <Attendance projectId={project.id} projectName={project.name} isAdmin={isAdmin} currentUser={currentUser} />
       <div className="summary-row">
         <SumCard label="Open snags" value={openSnags.length} tone={openSnags.length ? "rust" : "green"} />
         <SumCard label="Vendor payments pending" value={money(totalPending)} tone={totalPending ? "rust" : ""} />
@@ -89,6 +95,7 @@ export default function Today({ project, isAdmin, onJump, currentUser }) {
             <div className="entry-date">{latest.date}</div>
             {latest.remarks && <><div className="entry-label">Report / remarks</div><div className="entry-body">{latest.remarks}</div></>}
             {latest.nextDay && <><div className="entry-label">Next day line-up</div><div className="entry-body">{latest.nextDay}</div></>}
+            <div className="entry-meta">Added by <b>{latest.createdByName || "Unknown member"}</b></div>
           </div>
         ) : <Empty>No site updates logged yet.</Empty>}
       </Panel>
@@ -126,8 +133,27 @@ export default function Today({ project, isAdmin, onJump, currentUser }) {
   );
 }
 
+function QuickActions({ isAdmin, onJump }) {
+  const actions = isAdmin
+    ? [["log", "＋ Log update"], ["snags", "＋ Add snag"], ["expenses", "＋ Expense"], ["team", "Team"]]
+    : [["log", "＋ Log update"], ["snags", "＋ Add snag"], ["expenses", "＋ Expense"]];
+
+  return (
+    <div className="quick-actions" aria-label="Quick actions">
+      <span className="quick-actions-label">Quick actions</span>
+      {actions.map(([key, label]) => <button key={key} className="quick-action-btn" onClick={() => onJump(key)}>{label}</button>)}
+    </div>
+  );
+}
+
 function totals(boq) {
   const est = boq.reduce((s, r) => s + (Number(r.estimated) || 0), 0);
   const exp = boq.reduce((s, r) => s + (Number(r.expensed) || 0), 0);
   return { est, exp, rem: est - exp, pct: est ? Math.round((exp / est) * 100) : 0 };
+}
+
+function invoiceTotal(invoice) {
+  const subtotal = (invoice.items || []).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const afterDiscount = subtotal - (Number(invoice.discount) || 0);
+  return afterDiscount + afterDiscount * (Number(invoice.taxPct) || 0) / 100;
 }

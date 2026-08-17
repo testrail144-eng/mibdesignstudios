@@ -3,11 +3,12 @@
 import { collection, addDoc, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useProject } from "@/lib/store";
+import { recordActivity } from "@/lib/activity";
 import { money } from "@/lib/format";
 import { Panel, SumCard, Empty } from "../ui";
 
 // Bill of Quantities — cost by trade/category with estimated vs. expensed.
-export default function Boq({ projectId }) {
+export default function Boq({ projectId, projectName, currentUser }) {
   const { boq } = useProject(projectId);
   const rows = boq.data || [];
   const est = rows.reduce((s, r) => s + (Number(r.estimated) || 0), 0);
@@ -16,7 +17,8 @@ export default function Boq({ projectId }) {
   const pct = est ? Math.round((exp / est) * 100) : 0;
 
   const add = async () => {
-    await addDoc(collection(db, `projects/${projectId}/boq`), { category: "", estimated: "", expensed: "", createdAt: Date.now() });
+    const ref = await addDoc(collection(db, `projects/${projectId}/boq`), { category: "", estimated: "", expensed: "", createdAt: Date.now(), createdBy: currentUser?.uid || currentUser?.id || "", createdByName: currentUser?.name || currentUser?.email || "Unknown member" });
+    void recordActivity({ projectId, projectName, type: "BOQ category", title: "New BOQ category added", details: "A new cost category was created", actor: currentUser, resourceId: ref.id });
   };
   const update = async (id, field, value) => {
     await setDoc(doc(db, `projects/${projectId}/boq`, id), { [field]: value }, { merge: true });

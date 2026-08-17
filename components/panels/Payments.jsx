@@ -3,16 +3,18 @@
 import { collection, addDoc, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useProject } from "@/lib/store";
+import { recordActivity } from "@/lib/activity";
 import { money } from "@/lib/format";
 import { Panel, SumCard, Empty } from "../ui";
 
 const STATUSES = ["Pending", "Invoiced", "Paid"];
 
-export default function Payments({ project }) {
+export default function Payments({ project, currentUser }) {
   const { milestones } = useProject(project.id);
 
   const add = async () => {
-    await addDoc(collection(db, `projects/${project.id}/milestones`), { title: "", dueDate: "", amount: "", status: "Pending", createdAt: Date.now() });
+    const ref = await addDoc(collection(db, `projects/${project.id}/milestones`), { title: "", dueDate: "", amount: "", status: "Pending", createdAt: Date.now(), createdBy: currentUser?.uid || currentUser?.id || "", createdByName: currentUser?.name || currentUser?.email || "Unknown member" });
+    void recordActivity({ projectId: project.id, projectName: project.name, type: "payment milestone", title: "New payment milestone added", details: "A client payment milestone was created", actor: currentUser, resourceId: ref.id });
   };
   const update = async (id, field, value) => {
     await setDoc(doc(db, `projects/${project.id}/milestones`, id), { [field]: value }, { merge: true });

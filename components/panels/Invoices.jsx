@@ -5,12 +5,13 @@ import { collection, addDoc, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useProject, useDoc } from "@/lib/store";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { recordActivity } from "@/lib/activity";
 import { money, today, uid, esc } from "@/lib/format";
 import { Panel, Empty, Badge, Field } from "../ui";
 
 const STATUSES = ["Draft", "Sent", "Part Paid", "Paid", "Overdue"];
 
-export default function Invoices({ project }) {
+export default function Invoices({ project, currentUser }) {
   const { invoices } = useProject(project.id);
   const [openId, setOpenId] = useState(null);
   const { confirm, notify } = useConfirm();
@@ -27,8 +28,20 @@ export default function Invoices({ project }) {
       discount: "", taxPct: "18",
       notes: "",
       createdAt: Date.now(),
+      createdBy: currentUser?.uid || currentUser?.id || "",
+      createdByName: currentUser?.name || currentUser?.email || "Unknown member",
+      createdByEmail: currentUser?.email || "",
     });
     setOpenId(ref.id);
+    void recordActivity({
+      projectId: project.id,
+      projectName: project.name,
+      type: "invoice",
+      title: "New invoice added",
+      details: `Invoice ${"INV-" + String(seq).padStart(3, "0")}`,
+      actor: currentUser,
+      resourceId: ref.id,
+    });
   };
 
   const update = (id, patch) => setDoc(doc(db, `projects/${project.id}/invoices`, id), patch, { merge: true });

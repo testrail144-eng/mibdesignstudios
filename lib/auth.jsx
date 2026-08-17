@@ -9,8 +9,9 @@ import {
   sendPasswordResetEmail,
   updateProfile,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, query, where, getDocs, onSnapshot } from "firebase/firestore";
 import { auth, db, isConfigured } from "./firebase";
+import { normalizeEmail } from "./format";
 
 const AuthContext = createContext(null);
 
@@ -25,18 +26,40 @@ async function fetchRole(uid) {
   return { id: snap.id, uid, ...snap.data() };
 }
 
-// The very first account created becomes the admin. Everyone after that is
-// created as "staff" and an admin can promote them (or add them to a site)
-// from the Team panel.
+// An admin can prepare an invitation in teamInvites/{email}. When that email
+// creates an account, the invited role is applied automatically. Accounts
+// without an invitation retain the original first-user-admin / later-staff
+// behaviour for backwards compatibility with existing installations.
 async function ensureUserDoc(uid, email, name) {
   const ref = doc(db, "users", uid);
   const existing = await getDoc(ref);
   if (existing.exists()) return { id: uid, uid, ...existing.data() };
 
+  const emailKey = normalizeEmail(email);
+  let invitedRole = "";
+  if (emailKey) {
+    try {
+      const invite = await getDoc(doc(db, "teamInvites", emailKey));
+      if (invite.exists() && invite.data()?.email === emailKey) {
+        invitedRole = invite.data()?.role === "admin" ? "admin" : "staff";
+      }
+    } catch (err) {
+      // A missing invitation is normal. Rules deliberately allow a signed-in
+      // user to check only the invitation document matching their email.
+      console.warn("Could not check team invitation:", err?.message || err);
+    }
+  }
+
   // Is there already an admin anywhere? If not, this is the first user.
   const admins = await getDocs(query(collection(db, "users"), where("role", "==", "admin")));
-  const role = admins.empty ? "admin" : "staff";
-  const data = { uid, email: email || "", name: name || "", role, createdAt: Date.now() };
+  const role = invitedRole || (admins.empty ? "admin" : "staff");
+  const data = {
+    uid,
+    email: emailKey || email || "",
+    name: name || "",
+    role,
+    createdAt: Date.now(),
+  };
   await setDoc(ref, data);
   return { id: uid, uid, ...data };
 }
@@ -73,15 +96,29 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
+  // Role changes made by an admin are reflected immediately for the member,
+  // without requiring a sign-out/sign-in cycle.
+  useEffect(() => {
+    if (!user || !db) return undefined;
+    return onSnapshot(
+      doc(db, "users", user.uid),
+      (snap) => {
+        if (snap.exists()) setProfile({ id: snap.id, uid: user.uid, ...snap.data() });
+      },
+      (error) => console.warn("Live profile sync failed:", error?.message || error)
+    );
+  }, [user]);
+
   const signIn = useCallback(async (email, password) => {
-    const cred = await signInWithEmailAndPassword(auth, email, password);
+    const cred = await signInWithEmailAndPassword(auth, normalizeEmail(email), password);
     const p = await ensureUserDoc(cred.user.uid, cred.user.email, cred.user.displayName || "");
     setProfile(p);
     return p;
   }, []);
 
   const signUp = useCallback(async (email, password, name) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    const cleanEmail = normalizeEmail(email);
+    const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
     if (name) await updateProfile(cred.user, { displayName: name });
     const p = await ensureUserDoc(cred.user.uid, cred.user.email, name);
     setProfile(p);
@@ -89,7 +126,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signOut = useCallback(() => fbSignOut(auth), []);
-  const resetPassword = useCallback((email) => sendPasswordResetEmail(auth, email), []);
+  const resetPassword = useCallback((email) => sendPasswordResetEmail(auth, normalizeEmail(email)), []);
 
   // Keep the local profile in sync with any external change (e.g. admin edits role).
   const refreshProfile = useCallback(async () => {

@@ -5,16 +5,18 @@ import { collection, addDoc, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useProject } from "@/lib/store";
 import { useConfirm } from "@/components/ConfirmProvider";
+import { recordActivity } from "@/lib/activity";
 import { money, today, uid, esc } from "@/lib/format";
 import { Panel, Empty } from "../ui";
 
-export default function Vendors({ project }) {
+export default function Vendors({ project, currentUser }) {
   const { vendors, pos } = useProject(project.id);
   const [openPo, setOpenPo] = useState(null);
   const { confirm, notify } = useConfirm();
 
   const addVendor = async () => {
-    await addDoc(collection(db, `projects/${project.id}/vendors`), { name: "", phone: "", email: "", category: "", pending: "", received: "", createdAt: Date.now() });
+    const ref = await addDoc(collection(db, `projects/${project.id}/vendors`), { name: "", phone: "", email: "", category: "", pending: "", received: "", createdAt: Date.now(), createdBy: currentUser?.uid || currentUser?.id || "", createdByName: currentUser?.name || currentUser?.email || "Unknown member" });
+    void recordActivity({ projectId: project.id, projectName: project.name, type: "vendor", title: "New vendor added", details: "A vendor record was created", actor: currentUser, resourceId: ref.id });
   };
   const updateVendor = async (id, field, value) => {
     await setDoc(doc(db, `projects/${project.id}/vendors`, id), { [field]: value }, { merge: true });
@@ -38,8 +40,11 @@ export default function Vendors({ project }) {
       items: [{ id: uid(), desc: "", unit: "", qty: "", rate: "" }],
       discount: "", gstPercent: "18", paymentTerms: "", creditPeriod: "", preparedBy: "", checkedBy: "", approvedBy: "",
       createdAt: Date.now(),
+      createdBy: currentUser?.uid || currentUser?.id || "",
+      createdByName: currentUser?.name || currentUser?.email || "Unknown member",
     });
     setOpenPo(ref.id);
+    void recordActivity({ projectId: project.id, projectName: project.name, type: "purchase order", title: "New purchase order added", details: `PO ${"PO-" + String(seq).padStart(3, "0")}`, actor: currentUser, resourceId: ref.id });
   };
 
   return (

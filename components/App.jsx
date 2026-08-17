@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { collection, addDoc, doc, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth";
-import { useCollection } from "@/lib/store";
+import { useCollection, useDoc } from "@/lib/store";
+import { recordActivity } from "@/lib/activity";
 
 import Sidebar from "./Sidebar";
 import Today from "./panels/Today";
@@ -18,6 +19,7 @@ import Log from "./panels/Log";
 import Snags from "./panels/Snags";
 import Tasks from "./panels/Tasks";
 import Team from "./panels/Team";
+import Expenses from "./panels/Expenses";
 import Settings from "./panels/Settings";
 import { Empty, Modal, Field } from "./ui";
 import { useConfirm } from "./ConfirmProvider";
@@ -28,6 +30,7 @@ const ADMIN_TABS = [
   ["overview", "Overview & BOQ"],
   ["quote", "Quotation"],
   ["payments", "Payments"],
+  ["expenses", "Expenses"],
   ["invoices", "Invoices"],
   ["vendors", "Vendors"],
   ["log", "Daily Log"],
@@ -37,6 +40,7 @@ const ADMIN_TABS = [
 ];
 const STAFF_TABS = [
   ["today", "Today"],
+  ["expenses", "My Expenses"],
   ["log", "Daily Log"],
   ["snags", "Snags"],
   ["tasks", "My Tasks"],
@@ -55,6 +59,8 @@ export default function App() {
   const [saving, setSaving] = useState(false);
 
   const projects = useCollection("projects", { orderBy: "createdAt" }).data || [];
+  const studio = useDoc("settings/studio", {}).data || {};
+  const brandName = studio.siteName || studio.name || "GROUNDWORK";
 
   useEffect(() => {
     if (!currentId && projects.length) setCurrentId(projects[0].id);
@@ -62,6 +68,12 @@ export default function App() {
       setCurrentId(projects[0].id);
     }
   }, [projects, currentId]);
+
+  useEffect(() => {
+    if (typeof document !== "undefined" && brandName) {
+      document.title = `${brandName} — Site & Vendor Ledger`;
+    }
+  }, [brandName]);
 
   const createProject = async () => {
     const name = newName.trim();
@@ -75,6 +87,8 @@ export default function App() {
         contractValue: 0,
         createdAt: Date.now(),
         createdBy: profile.uid || profile.id || "",
+        createdByName: profile.name || profile.email || "",
+        createdByEmail: profile.email || "",
       });
       setCurrentId(ref.id);
       setTab("today");
@@ -82,6 +96,15 @@ export default function App() {
       setNewName("");
       setNewClient("");
       setNewLocation("");
+      void recordActivity({
+        projectId: ref.id,
+        projectName: name,
+        type: "site",
+        title: "New site created",
+        details: `${name}${newClient.trim() ? ` for ${newClient.trim()}` : ""}`,
+        actor: profile,
+        resourceId: ref.id,
+      });
     } catch (err) {
       console.error("Create site failed:", err);
       notify("Could not create site: " + (err?.message || "unknown error"));
@@ -102,6 +125,7 @@ export default function App() {
         onNew={() => setShowNewSite(true)}
         isAdmin={isAdmin}
         profile={profile}
+        studio={studio}
         onSignOut={() => (window.location.href = "/")}
         onOpenSettings={() => setShowSettings(true)}
       />
@@ -115,7 +139,8 @@ export default function App() {
           </Empty>
         ) : (
           <>
-            <TitleBlock project={project} isAdmin={isAdmin} projectId={project.id} />
+            <WorkspaceHeader profile={profile} isAdmin={isAdmin} />
+            <TitleBlock project={project} isAdmin={isAdmin} projectId={project.id} currentUser={profile} />
 
             <div className="tabs">
               {tabs.map(([key, label]) => (
@@ -127,15 +152,16 @@ export default function App() {
 
             {tab === "today" && <Today project={project} isAdmin={isAdmin} onJump={setTab} currentUser={profile} />}
             {tab === "dashboard" && isAdmin && <Dashboard />}
-            {tab === "overview" && isAdmin && <Boq projectId={project.id} />}
-            {tab === "quote" && isAdmin && <Quotations project={project} />}
-            {tab === "payments" && isAdmin && <Payments project={project} />}
-            {tab === "invoices" && isAdmin && <Invoices project={project} />}
-            {tab === "vendors" && isAdmin && <Vendors project={project} />}
-            {tab === "log" && <Log projectId={project.id} />}
-            {tab === "snags" && <Snags projectId={project.id} isAdmin={isAdmin} />}
-            {tab === "tasks" && <Tasks projectId={project.id} isAdmin={isAdmin} currentUser={profile} />}
-            {tab === "team" && isAdmin && <Team />}
+            {tab === "overview" && isAdmin && <Boq projectId={project.id} projectName={project.name} currentUser={profile} />}
+            {tab === "quote" && isAdmin && <Quotations project={project} currentUser={profile} />}
+            {tab === "payments" && isAdmin && <Payments project={project} currentUser={profile} />}
+            {tab === "expenses" && <Expenses projectId={project.id} projectName={project.name} isAdmin={isAdmin} currentUser={profile} />}
+            {tab === "invoices" && isAdmin && <Invoices project={project} currentUser={profile} />}
+            {tab === "vendors" && isAdmin && <Vendors project={project} currentUser={profile} />}
+            {tab === "log" && <Log projectId={project.id} projectName={project.name} currentUser={profile} />}
+            {tab === "snags" && <Snags projectId={project.id} projectName={project.name} isAdmin={isAdmin} currentUser={profile} />}
+            {tab === "tasks" && <Tasks projectId={project.id} projectName={project.name} isAdmin={isAdmin} currentUser={profile} />}
+            {tab === "team" && isAdmin && <Team projectId={project.id} projectName={project.name} />}
           </>
         )}
       </div>
@@ -171,16 +197,53 @@ export default function App() {
   );
 }
 
-function TitleBlock({ project, isAdmin, projectId }) {
-  const update = async (field, value) => {
-    await setDoc(doc(db, "projects", projectId), { [field]: value }, { merge: true });
+function WorkspaceHeader({ profile, isAdmin }) {
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const name = profile?.name?.trim()?.split(/\s+/)[0] || (isAdmin ? "Admin" : "there");
+
+  return (
+    <div className="workspace-topline">
+      <div>
+        <div className="workspace-eyebrow">MIB Design Studios · {isAdmin ? "Admin workspace" : "Staff workspace"}</div>
+        <div className="workspace-greeting">{greeting}, <span>{name}</span></div>
+      </div>
+      <div className="sync-pill"><span className="live-dot" /> Live sync</div>
+    </div>
+  );
+}
+
+function TitleBlock({ project, isAdmin, projectId, currentUser }) {
+  const [values, setValues] = useState({
+    name: project.name || "",
+    client: project.client || "",
+    location: project.location || "",
+  });
+
+  useEffect(() => {
+    setValues({
+      name: project.name || "",
+      client: project.client || "",
+      location: project.location || "",
+    });
+  }, [project.id, project.name, project.client, project.location]);
+
+  const update = async (field) => {
+    const value = String(values[field] || "").trim();
+    if (value === String(project[field] || "")) return;
+    await setDoc(doc(db, "projects", projectId), {
+      [field]: value,
+      updatedAt: Date.now(),
+      updatedBy: currentUser?.uid || currentUser?.id || "",
+      updatedByName: currentUser?.name || currentUser?.email || "",
+    }, { merge: true });
   };
 
   return (
     <div className="title-block">
       <div className="tb-main">
         {isAdmin ? (
-          <input defaultValue={project.name} placeholder="Project name" onBlur={(e) => update("name", e.target.value)} />
+          <input value={values.name} placeholder="Project name" onChange={(e) => setValues((v) => ({ ...v, name: e.target.value }))} onBlur={() => update("name")} />
         ) : (
           <div style={{ fontWeight: 700, fontSize: 22 }}>{project.name}</div>
         )}
@@ -188,7 +251,7 @@ function TitleBlock({ project, isAdmin, projectId }) {
       <div className="tb-cell">
         <div className="tb-label">Client</div>
         {isAdmin ? (
-          <input defaultValue={project.client || ""} placeholder="Client name" onBlur={(e) => update("client", e.target.value)} />
+          <input value={values.client} placeholder="Client name" onChange={(e) => setValues((v) => ({ ...v, client: e.target.value }))} onBlur={() => update("client")} />
         ) : (
           <div className="mono" style={{ fontSize: 13 }}>{project.client || "—"}</div>
         )}
@@ -196,7 +259,7 @@ function TitleBlock({ project, isAdmin, projectId }) {
       <div className="tb-cell">
         <div className="tb-label">Location</div>
         {isAdmin ? (
-          <input defaultValue={project.location || ""} placeholder="Site location" onBlur={(e) => update("location", e.target.value)} />
+          <input value={values.location} placeholder="Site location" onChange={(e) => setValues((v) => ({ ...v, location: e.target.value }))} onBlur={() => update("location")} />
         ) : (
           <div className="mono" style={{ fontSize: 13 }}>{project.location || "—"}</div>
         )}
